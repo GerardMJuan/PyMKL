@@ -5,12 +5,42 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 
 def colorFader(c1,c2,mix=0): #fade (linear interpolate) from color c1 (at mix=0) to c2 (mix=1)
+    """Creates a color gradient between two colors.
+    
+    Args:
+        c1 (str): Starting color (hex code or name)
+        c2 (str): Ending color (hex code or name)
+        mix (float): Mixing ratio between 0 (pure c1) and 1 (pure c2)
+    
+    Returns:
+        str: Hex code of interpolated color
+    """
     c1=np.array(mcolors.to_rgb(c1))
     c2=np.array(mcolors.to_rgb(c2))
     return mcolors.to_hex((1-mix)*c1 + mix*c2)
 
 
 def descriptors(descriptors: List[np.ndarray], groupby: int, figsize: Tuple[int,int] = (16,16), varnames: Union[np.ndarray, list] = None, dimnames: Union[np.ndarray, list] = None, same_scale: bool = True, return_axes: bool = False, grid: bool = True, color_from: Union[str, List[str]] = "blue", color_to: Union[str, List[str]] = "red", groupcolors: int = None, **kwargs):
+    """Creates a multi-panel plot of descriptor values across features and dimensions.
+    
+    Args:
+        descriptors: List of descriptor arrays to plot
+        groupby: Number of groups to combine in each subplot
+        figsize: Figure dimensions (width, height)
+        varnames: Names for each feature/variable
+        dimnames: Names for each dimension
+        same_scale: Whether to use same y-axis scale within each feature
+        return_axes: Whether to return figure and axes objects
+        grid: Whether to show grid lines
+        color_from: Starting color(s) for gradient
+        color_to: Ending color(s) for gradient
+        groupcolors: Number of distinct colors to use (defaults to groupby)
+        **kwargs: Additional arguments passed to plt.subplots()
+    
+    Returns:
+        Optional[Tuple[plt.Figure, np.ndarray]]: Figure and axes if return_axes is True
+    """
+
     # Rest
     n_features = len(descriptors)
     n_dimensions = descriptors[0].shape[1]//groupby
@@ -21,7 +51,7 @@ def descriptors(descriptors: List[np.ndarray], groupby: int, figsize: Tuple[int,
     if isinstance(color_from, str):
         color_from = [color_from]*n_features
     if isinstance(color_to, str):
-        color_to   = [color_to]*n_features
+        color_to = [color_to]*n_features
     assert (len(color_from) == n_features) and (len(color_from) == n_features), "The number of specified colors must match the number of descriptors"
     color_range = [
         [colorFader(mcolors.to_hex(c_from),mcolors.to_hex(c_to),v) for v in np.linspace(0,1,groupcolors)] 
@@ -68,6 +98,18 @@ def descriptors(descriptors: List[np.ndarray], groupby: int, figsize: Tuple[int,
 
 
 def path(descriptors: List[np.ndarray], figsize=(16,16), varnames: Union[np.ndarray, list] = None, dimnames: Union[np.ndarray, list] = None):
+    """Creates a multi-panel plot showing paths of descriptor values.
+    
+    Similar to the descriptors() function but specifically for visualizing paths
+    or trajectories in the descriptor space, using a different color scheme.
+    
+    Args:
+        descriptors: List of descriptor arrays to plot
+        figsize: Figure dimensions (width, height)
+        varnames: Names for each feature/variable
+        dimnames: Names for each point/dimension
+    """
+
     # Rest
     n_features = len(descriptors)
     n_dimensions = descriptors[0].shape[1]

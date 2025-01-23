@@ -6,7 +6,11 @@ import scipy.linalg
 def to_PDM(M, eps):
     # make it symmetric and positive definite
     M = 0.5 * (M + M.transpose())
-    if np.allclose(np.matrix(M),np.matrix(M).H):
+
+    # Check if M is Hermitian without using np.matrix
+    is_hermitian = np.allclose(M, M.conj().T)
+
+    if is_hermitian:
         # If is Hermitian, perform scipy's eigh
         val, vec = sp.linalg.eigh(M)
     else:

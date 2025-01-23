@@ -174,7 +174,12 @@ class MKL():
         sdp.add_constraint(betas >= 0)
         # sdp.add_constraint(pic.sum([betas[i] for i in range(self.M)],'i','0...'+str(self.M)) == 1)
         sdp.add_constraint(((1 & betas.T) // (betas & B))>>0 )
-        
+        # sdp.add_constraint(pic.sum(betas) == 1)
+        # Add a constraint for the beta that is L2 norm
+        # sdp.add_constraint(pic.norm(betas,1) <= 1)
+        #lambda_value = 0.5
+        #sdp.set_objective('min','I'|matrix(self.SW_A)*B + lambda_value*pic.norm(betas, p=1))
+
         sdp.solve(solver=self.solver, solve_via_dual=False, verbose=False)
 
         betas               = np.array(betas.value)
@@ -275,10 +280,28 @@ class MKL():
             print(" * Unsupervised MKL has not been trained. Cannot transform the data")
 
 
-
-
-
-
-
-
+    def project_new(self, K_new: np.ndarray) -> np.ndarray:
+        """Projects new kernel matrices onto the learned MKL space.
+        
+        Args:
+            K_new: Kernel matrices for new samples. Shape (M, n_test, N_train) where:
+                M: Number of features (same as training)
+                n_test: Number of test samples to project 
+                N_train: Number of training samples (must match training size)
+        
+        Returns:
+            proj_new: Projected coordinates in latent space. Shape (n_test, dim)
+        """
+        if not hasattr(self, 'A') or not hasattr(self, 'betas'):
+            raise AttributeError("Model must be trained before projecting new samples")
+        
+        # Input validation 
+        if K_new.shape[0] != self.M:
+            raise ValueError(f"Expected {self.M} feature kernels, got {K_new.shape[0]}")
+        if K_new.shape[2] != self.N:
+            raise ValueError(f"Kernel matrices must have {self.N} columns (training samples)")
+        
+        # Vectorized projection
+        K_reshaped = np.moveaxis(K_new, 0, -1)  # Shape (n_test, N_train, M)
+        return (self.A.T @ (K_reshaped @ self.betas).squeeze(-1).T).T
 

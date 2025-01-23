@@ -15,35 +15,51 @@ import sklearn
 import sklearn.cluster
 import networkx as nx
 
+
 def INEXACT_Bermanis_4DATA(Ge_s, f, embedding, direction, e_s, gamma):
-    # Get shape
+    """Implements the Inexact Bermanis interpolation algorithm for data analysis.
+    
+    Args:
+        Ge_s: Gaussian kernel matrix computed from pairwise distances
+        f: Input feature values to interpolate
+        embedding: Data points in the embedded space
+        direction: Direction vectors for interpolation
+        e_s: Kernel bandwidth parameter
+        gamma: Regularization parameter
+    
+    Returns:
+        dict: Contains interpolated values 'f_s' and 'f_star_s'
+    """
+    # Get shape of input matrix
     N = Ge_s.shape[0]
 
-    # Solve system
-    c = np.linalg.solve((Ge_s + (np.eye(N,N)/gamma) ), f.T)
+    # Solve linear system (Ge_s + I/gamma)c = f
+    c = np.linalg.solve((Ge_s + (np.eye(N,N)/gamma)), f.T)
 
-    # ???
-    f_s = Ge_s @ c;
+    # Compute interpolation at sample points
+    f_s = Ge_s @ c
 
-    # step 5
-    p = direction.shape[0]
-    l = f_s.shape[0]
+    # Compute interpolation at query points
+    p = direction.shape[0]  # Number of query points
+    l = f_s.shape[0]       # Number of sample points
     f_star_s = np.zeros((f_s.shape[1],p))
 
+    # Interpolate for each query point
     for j in range(p):
+        # Compute distances to query point
         tmp = np.matlib.repmat(direction[j,:], l ,1)
         tmp = np.sum((tmp - embedding)**2,1).T
-        G_star_s = np.exp( -tmp / (2*(e_s)**2) ) 
+        # Compute Gaussian kernel values
+        G_star_s = np.exp(-tmp / (2*(e_s)**2))
         
-        # step 6
+        # Interpolate using computed coefficients
         f_star_s[:,j] = (G_star_s @ c).T
 
-    output = {
-        "f_s": f_s.T,
-        "f_star_s": f_star_s
+    return {
+        "f_s": f_s.T,        # Interpolation at sample points
+        "f_star_s": f_star_s # Interpolation at query points
     }
 
-    return output
 
 
 def get_sample(Features: List[Union[np.ndarray, list]], index: int):
@@ -51,31 +67,27 @@ def get_sample(Features: List[Union[np.ndarray, list]], index: int):
 
     return point_features
 
-def get_variability_descriptors(embedding: np.ndarray, Features: List[Union[np.ndarray, list]], dimensions: Union[None,int,list] = None, direction: np.ndarray = None, gamma: Union[float,np.ndarray] = None, max_iterations: int = 20, NN_dims: Union[int,None] = None):
+def get_variability_descriptors(embedding: np.ndarray, Features: List[Union[np.ndarray, list]], dimensions: Union[None,int,list] = None, direction: np.ndarray = None, gamma: Union[float,np.ndarray] = None, max_iterations: int = 20, NN_dims: Union[int,None] = None, n_variability_points: int = 5):
     """
-    Arguments:
-    * Features: List[Union[np.ndarray, list]]
-        Original input features
-
-    * embedding: np.ndarray
-        Data projected into the output space
-
-    * dimensions: Union[int,list]
-        Dimensions to be regressed
-
-    * direction: np.ndarray
-        Direction of the projection into the output space
+    Computes variability descriptors for embedded data using multi-scale kernel regression.
     
-    * gamma: array_like
-        Regularization term
-
-    * max_iterations: int
-        Maximum number of iterations for the approximation
-
-    * NN_dims: int
-        Number of dimensions to consider when computing the distances for the nearest neighbours to each point
-
-    """
+    This function implements a multi-scale analysis approach to understand how features
+    vary across the embedded space. It uses an iterative kernel regression scheme with
+    decreasing bandwidth to capture both global and local feature variations.
+    
+    Args:
+        embedding: Data points in embedded space (n_samples x n_dimensions)
+        Features: List of feature arrays to analyze
+        dimensions: Which dimensions to analyze (int or list)
+        direction: Query points for interpolation (if None, uses standard deviations)
+        gamma: Regularization parameter(s)
+        max_iterations: Maximum number of multi-scale iterations
+        NN_dims: Number of dimensions to use for nearest neighbor calculations
+        n_variability_points: Number of points in the variability linspace (default=5)
+    
+    Returns:
+        list: Interpolated feature values at query points for each input feature
+    """    
     # Dimensions to array
     if dimensions is None:
         dimensions = embedding.shape[1]
@@ -107,15 +119,15 @@ def get_variability_descriptors(embedding: np.ndarray, Features: List[Union[np.n
     # MSE Algorithm - same in every iteration, take out of loop for efficiency
     if direction is None:
         embedding_mean = np.mean(embedding_reduced,axis=0)
-        direction = np.zeros((len(dimensions)*5,embedding_reduced.shape[1]))
+        direction = np.zeros((len(dimensions)*n_variability_points,embedding_reduced.shape[1]))
 
         for i,d in enumerate(dimensions):
             std = np.std(embedding_reduced[:,d],ddof=1)
-            variability = np.array([-2*std,-std,0,std,2*std])
+            variability = np.linspace(-2*std, 2*std, n_variability_points)
 
             for j,var in enumerate(variability):
-                direction[5*i+j,:] = embedding_mean
-                direction[5*i+j,i] = direction[5*i+j,i] + var
+                direction[n_variability_points*i+j,:] = embedding_mean
+                direction[n_variability_points*i+j,i] = direction[n_variability_points*i+j,i] + var
     else:
         # If provided, take NN_dims dimensions
         direction = direction.copy()[:,:NN_dims]
@@ -156,6 +168,19 @@ def get_variability_descriptors(embedding: np.ndarray, Features: List[Union[np.n
 
 
 def regression_line_clusters(embedding: np.ndarray, clusters: Union[int,np.ndarray], dim2sort: int = None, dimensions: Union[None, int, list] = None, random_state: Tuple[int,np.random.RandomState] = None):
+    """
+    Computes regression lines through cluster centers in embedded space.
+    
+    Args:
+        embedding: Data points in embedded space
+        clusters: Either number of clusters to create or pre-computed cluster labels
+        dim2sort: Optional dimension to sort clusters by
+        dimensions: Which dimensions to analyze
+        random_state: Random seed for reproducibility
+    
+    Returns:
+        np.ndarray: Directions/centers for each cluster
+    """
     # Treat inputs - dimensions
     if dimensions is None:
         dimensions = embedding.shape[1]
@@ -218,6 +243,21 @@ def regression_line_clusters(embedding: np.ndarray, clusters: Union[int,np.ndarr
 def regression_line_points(embedding: np.ndarray, point_from: np.ndarray, point_to: np.ndarray, 
                            n_points: int = 10, dimensions: Union[None,int, list] = None, 
                            metric: Callable = np.median):
+    """
+    Creates a regression line between two points in the embedded space.
+    
+    Args:
+        embedding: Data points in embedded space
+        point_from: Starting point coordinates
+        point_to: Ending point coordinates
+        n_points: Number of interpolation points between start and end
+        dimensions: Which dimensions to analyze
+        metric: Function to compute central tendency (default: median)
+    
+    Returns:
+        np.ndarray: Array of interpolated points along the regression line
+    """
+
     # Treat inputs - dimensions
     if dimensions is None:
         dimensions = embedding.shape[1]
@@ -238,6 +278,19 @@ def regression_line_points(embedding: np.ndarray, point_from: np.ndarray, point_
     return points
 
 def regression_line_dimensions(embedding: np.ndarray, dimension_to_explore: int, n_points: int = 10, dimensions: Union[None,int, list] = None, metric: Callable = np.median):
+    """Computes regression lines along a specific dimension in the embedded space.
+    
+    Args:
+        embedding: Data points in embedded space
+        dimension_to_explore: Which dimension to analyze
+        n_points: Number of points to sample along the dimension
+        dimensions: Which dimensions to include in analysis
+        metric: Function to compute central tendency (default: median)
+    
+    Returns:
+        np.ndarray: Direction vectors for the regression line
+    """
+
     # Treat inputs - dimensions
     if dimensions is None:
         dimensions = embedding.shape[1]
@@ -258,6 +311,16 @@ def regression_line_dimensions(embedding: np.ndarray, dimension_to_explore: int,
 
 
 def regression_line_std(embedding: np.ndarray, n_points: int = 5, dimensions: Union[None,int, list] = None):
+    """Computes regression lines based on standard deviations from the mean.
+    
+    Args:
+        embedding: Data points in embedded space
+        n_points: Number of points to sample along each dimension
+        dimensions: Which dimensions to analyze
+    
+    Returns:
+        np.ndarray: Direction vectors based on standard deviation intervals
+    """    
     # Treat inputs - dimensions
     if dimensions is None:
         dimensions = embedding.shape[1]
@@ -280,14 +343,16 @@ def regression_line_std(embedding: np.ndarray, n_points: int = 5, dimensions: Un
 
 
 def embedding_self_correlation(embedding: np.ndarray, display_dimensions: bool = True, correlation_threshold: float = 0.9, metric: Callable = lambda x: scipy.spatial.distance.squareform(scipy.spatial.distance.pdist(x,metric="euclidean"))) -> Tuple[np.ndarray,np.ndarray]:
-    """This code is used to assess the number of relevant dimensions to
+    """
+    This code is used to assess the number of relevant dimensions to
     consider from an MKL output space. To do so, it ranks the neighbors for
     each of the data entry (patient) and compares it to the same ranking but
     computed with one more dimension. This way, when the ranking of nearest
     neighbors does not change, we can argue that the space has stabilized.
     
     Inputs:
-    * embedding: embedding of the input data in the latent space"""
+    * embedding: embedding of the input data in the latent space
+    """
     
     # Retrieve input shape
     N,M = embedding.shape
@@ -342,7 +407,25 @@ def embedding_self_correlation(embedding: np.ndarray, display_dimensions: bool =
 
 
 def cluster_MKR(embedding: np.ndarray, Features: List[np.ndarray], clusters: np.ndarray, dimensions: Union[None,int,np.ndarray] = None, NN_dims: Union[int,None] = None, return_embeddings: bool = False):
-    """Regression on cluster modes"""
+    """
+    Performs multi-kernel regression analysis on clustered data.
+    
+    For each cluster, this function:
+    1. Centers the cluster data
+    2. Performs PCA
+    3. Computes variability descriptors
+    
+    Args:
+        embedding: Data points in embedded space
+        Features: List of feature arrays to analyze
+        clusters: Cluster assignments for each point
+        dimensions: Which dimensions to analyze
+        NN_dims: Number of dimensions for nearest neighbor calculations
+        return_embeddings: Whether to return transformed embeddings
+        
+    Returns:
+        Union[List, Tuple]: Descriptors and optionally embeddings per cluster
+    """
     # Treat inputs - dimensions
     if dimensions is None:
         dimensions = embedding.shape[1]
@@ -353,6 +436,8 @@ def cluster_MKR(embedding: np.ndarray, Features: List[np.ndarray], clusters: np.
     # Output structures
     descriptors = []
     out_embeddings = []
+
+    print("test")
 
     # Obtain the per-cluster main directions and descriptors
     for i,c in enumerate(np.unique(clusters)):
@@ -385,7 +470,14 @@ def cluster_MKR(embedding: np.ndarray, Features: List[np.ndarray], clusters: np.
 
 
 def compute_agreement(input, target):
-    """Function for calculating clustering accuray and matching found 
+    """
+    Calculates clustering accuracy by finding optimal label matching.
+    
+    Tries all possible permutations of cluster labels to find the arrangement
+    that best matches the target labels. Note: becomes computationally expensive
+    for more than 7 clusters.
+    
+    Function for calculating clustering accuray and matching found 
     labels with true labels. Assumes input and target both are Nx1 vectors with
     clustering labels. Does not support fuzzy clustering.
     
@@ -429,6 +521,25 @@ def compute_agreement(input, target):
 
 
 def process_table(data: pd.DataFrame, clusters: np.ndarray, y: Union[str,np.ndarray,list] = "outcome", dtypes: dict = {}):
+    """
+    Generates statistical summary of variables grouped by clusters.
+    
+    For each variable:
+    - Determines appropriate statistical test based on data type
+    - Computes descriptive statistics per cluster
+    - Performs statistical significance testing between clusters
+    
+    Args:
+        data: DataFrame containing variables to analyze
+        clusters: Cluster assignments
+        y: Target variable name or array
+        dtypes: Dictionary of data types for variables
+        
+    Returns:
+        pd.DataFrame: Summary statistics and p-values for each variable
+    """
+
+    
     # Check inputs
     if isinstance(y, str):
         if y not in data:
@@ -565,28 +676,21 @@ def process_table(data: pd.DataFrame, clusters: np.ndarray, y: Union[str,np.ndar
 
 def get_graph(embedding: np.ndarray, N_neighbours: int = 5, NN_dims: Union[int,None] = None, labels: list = None):
     """
-    Arguments:
-    * Features: List[Union[np.ndarray, list]]
-        Original input features
-
-    * embedding: np.ndarray
-        Data projected into the output space
-
-    * dimensions: Union[int,list]
-        Dimensions to be regressed
-
-    * direction: np.ndarray
-        Direction of the projection into the output space
+    Constructs a nearest neighbor graph from embedded data points.
     
-    * gamma: array_like
-        Regularization term
-
-    * max_iterations: int
-        Maximum number of iterations for the approximation
-
-    * NN_dims: int
-        Number of dimensions to consider when computing the distances for the nearest neighbours to each point
-
+    Creates an undirected graph where:
+    - Nodes represent data points
+    - Edges connect to N nearest neighbors
+    - Edge weights are distances between points
+    
+    Args:
+        embedding: Data points in embedded space
+        N_neighbours: Number of nearest neighbors to connect
+        NN_dims: Dimensions to use for distance calculations
+        labels: Optional node labels
+        
+    Returns:
+        nx.Graph: NetworkX graph of nearest neighbor connections
     """
     # Dimensions to array
     if NN_dims is None:
