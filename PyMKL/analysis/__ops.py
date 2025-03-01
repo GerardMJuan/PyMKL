@@ -406,7 +406,7 @@ def embedding_self_correlation(embedding: np.ndarray, display_dimensions: bool =
     return self_correlation,M_min
 
 
-def cluster_MKR(embedding: np.ndarray, Features: List[np.ndarray], clusters: np.ndarray, dimensions: Union[None,int,np.ndarray] = None, NN_dims: Union[int,None] = None, return_embeddings: bool = False):
+def cluster_MKR(embedding: np.ndarray, Features: List[np.ndarray], clusters: np.ndarray, dimensions: Union[None,int,np.ndarray] = None, NN_dims: Union[int,None] = None, return_embeddings: bool = False, n_variability_points: int = 5):
     """
     Performs multi-kernel regression analysis on clustered data.
     
@@ -422,6 +422,7 @@ def cluster_MKR(embedding: np.ndarray, Features: List[np.ndarray], clusters: np.
         dimensions: Which dimensions to analyze
         NN_dims: Number of dimensions for nearest neighbor calculations
         return_embeddings: Whether to return transformed embeddings
+        n_variability_points: Number of points in the variability linspace
         
     Returns:
         Union[List, Tuple]: Descriptors and optionally embeddings per cluster
@@ -436,8 +437,6 @@ def cluster_MKR(embedding: np.ndarray, Features: List[np.ndarray], clusters: np.
     # Output structures
     descriptors = []
     out_embeddings = []
-
-    print("test")
 
     # Obtain the per-cluster main directions and descriptors
     for i,c in enumerate(np.unique(clusters)):
@@ -457,7 +456,7 @@ def cluster_MKR(embedding: np.ndarray, Features: List[np.ndarray], clusters: np.
         Features_cluster = [f[:,filter_cluster] for f in Features]
 
         # Get variability descriptors
-        d = get_variability_descriptors(embedding_PCA,Features_cluster,dimensions=dimensions,NN_dims=NN_dims)
+        d = get_variability_descriptors(embedding_PCA,Features_cluster,dimensions=dimensions,NN_dims=NN_dims, n_variability_points=n_variability_points)
 
         # Save outputs
         descriptors.append(d)
